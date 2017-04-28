@@ -20,6 +20,7 @@ LFLAGS = -g -Wall -Wextra
 FUSE_EXAMPLES = fusehello fusexmp 
 XATTR_EXAMPLES = xattr-util
 OPENSSL_EXAMPLES = aes-crypt-util 
+PA5_ENCRYPTFS = pa5-encryptfs
 
 .PHONY: all fuse-examples xattr-examples openssl-examples clean
 
@@ -69,6 +70,7 @@ clean:
 	rm -f $(FUSE_EXAMPLES)
 	rm -f $(XATTR_EXAMPLES)
 	rm -f $(OPENSSL_EXAMPLES)
+	rm -f $(PA5_ENCRYPTFS)
 	rm -f *.o
 	rm -f *~
 	rm -f handout/*~

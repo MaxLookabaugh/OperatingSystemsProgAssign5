@@ -34,6 +34,8 @@
 #define _XOPEN_SOURCE 500
 #endif
 
+#define _GNU_SOURCE
+
 //need to define encrypted, decrypted and neither
 #define ENCRYPT 1
 #define DECRYPT 0
@@ -54,16 +56,19 @@
 #endif
 //include aes-cryot for do_crypt
 #include "aes-crypt.h"
-
 #define XATTR_ENCRYPTED "true"
 #define XATTR_UNENCRYPTED "false"
-#define XATTR_NAME "user.pa4-encryptfs.encrypted"
+#define XATTR_NAME "user.pa5-encryptfs.encrypted"
+
+#define ENCRYPTFS_VARS ((struct encryptfs_vars * ) fuse_get_context()->private_data)
+
 
 //global variables
 char *PATH[1024];
 char *KEYPHRASE[1024];
 
 //struct for private data,
+
 typedef struct encryptfs_vars encryptfs_vars;
 struct encryptfs_vars {
 	char* keyPhrase;
@@ -71,25 +76,29 @@ struct encryptfs_vars {
 
 };
 
+
 //get the ful path of fuse fs. 
 void getFullPath(char* filepath, const char* path){
 	//get the private data of the fs(in this case we want rootpath) 
 	//This creates object with the data of the filesystem
-	encryptfs_vars *data =(encryptfs_vars *) ( fuse_get_context() -> private_data);
+	
+	//encryptfs_vars *data =(encryptfs_vars *) ( fuse_get_context() -> private_data);
+	
 	//copy the rootpath of the filesystem to new path
-	strcpy(filepath, data->rootPath);
+	strcpy(filepath, ENCRYPTFS_VARS->rootPath);
 	//need to root path to path of current file
-	strncat(filepath, path, 1024); 
+	strncat(filepath, path, PATH_MAX); 
 	
 }
 
 
 int checkEncryption(char* filepath){
-	int length;
-	length = lgetxattr(filepath, XATTR_NAME, NULL, 0);
-	if (length < 0) return 0;
-	char value[length];
-	lgetxattr(filepath, XATTR_NAME, value, length);
+	//need to get the result length of getxattr to tell if true or false 
+	int result_length;
+	result_length = lgetxattr(filepath,"user.pa5-encryptfs.encryptied", NULL, 0); //XATTR_NAME
+	if (result_length < 0) return 0;
+	char value[result_length];
+	lgetxattr(filepath, XATTR_NAME, value, result_length);
 /*	if (strcmp(value, XATTR_ENCRYPTED)){ 
 		return 0;
 	}
@@ -97,6 +106,7 @@ int checkEncryption(char* filepath){
 		return 1;
 	}
 */
+	value[result_length] = '\0';
  	return(!strcmp(value, XATTR_ENCRYPTED))? 1 : 0;
 
 
@@ -107,7 +117,7 @@ static int encryptfs_getattr(const char *path, struct stat *stbuf)
 {
 	int res;
 	//set the filepath to PATH
-	char filepath[1024];
+	char filepath[PATH_MAX];
 //	encryptfs_vars data = fuse_get_context() -> private_data;
 	getFullPath(filepath, path);
 	//filepath = PATH;
@@ -123,7 +133,7 @@ static int encryptfs_access(const char *path, int mask)
 {
 	int res;
 	//assign filepath
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;
 	getFullPath(filepath, path);
 	res = access(filepath, mask);
@@ -138,7 +148,7 @@ static int encryptfs_readlink(const char *path, char *buf, size_t size)
 	int res;
 	
 	//assign filepath
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;
 	getFullPath(filepath, path);
 	
@@ -159,8 +169,7 @@ static int encryptfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 
 	(void) offset;
 	(void) fi;
-	char filepath[1024];
-	//filepath = PATH;
+	char filepath[PATH_MAX];
 	getFullPath(filepath, path);
 	dp = opendir(filepath);
 	if (dp == NULL)
@@ -184,7 +193,7 @@ static int encryptfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	int res;
 
 	//adding filepath 
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;
 	getFullPath(filepath, path);
 	/* On Linux this could just be 'mknod(path, mode, rdev)' but this
@@ -207,7 +216,7 @@ static int encryptfs_mkdir(const char *path, mode_t mode)
 {
 	int res;
 	//adding file path
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;	
 	getFullPath(filepath, path);
 	
@@ -222,7 +231,7 @@ static int encryptfs_unlink(const char *path)
 {
 	int res;
 	//adding file path
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;
 	getFullPath(filepath, path);
 
@@ -235,9 +244,11 @@ static int encryptfs_unlink(const char *path)
 
 static int encryptfs_rmdir(const char *path)
 {
+	printf("in rmdir\n");
+
 	int res;
 	//adding file path 
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;
 	getFullPath(filepath, path);
 	
@@ -250,10 +261,12 @@ static int encryptfs_rmdir(const char *path)
 
 static int encryptfs_symlink(const char *from, const char *to)
 {
+	printf("in symlink\n");
+	
 	int res;
 	//adding file system
-	char filepathTo[1024];
-	char filepathFrom[1024];
+	char filepathTo[PATH_MAX];
+	char filepathFrom[PATH_MAX];
 	getFullPath(filepathFrom, from);
 	getFullPath(filepathTo, to);
 	
@@ -268,8 +281,8 @@ static int encryptfs_rename(const char *from, const char *to)
 {
 	int res;
 	//adding file system
-	char filepathFrom[1024];
-	char filepathTo[1024];
+	char filepathFrom[PATH_MAX];
+	char filepathTo[PATH_MAX];
 	getFullPath(filepathFrom, from);
 	getFullPath(filepathTo, to);
 		
@@ -283,8 +296,8 @@ static int encryptfs_rename(const char *from, const char *to)
 static int encryptfs_link(const char *from, const char *to)
 {
 	int res;
-	char filepathFrom[1024];
-	char filepathTo[1024];
+	char filepathFrom[PATH_MAX];
+	char filepathTo[PATH_MAX];
 	getFullPath(filepathFrom, from);
 	getFullPath(filepathTo, to);
 
@@ -299,8 +312,7 @@ static int encryptfs_chmod(const char *path, mode_t mode)
 {
 	int res;
 	//adding file path
-	char filepath[1024];
-	//filepath = PATH;
+	char filepath[PATH_MAX];	//filepath = PATH;
 	getFullPath(filepath, path);
 	
 	res = chmod(filepath, mode);
@@ -346,7 +358,7 @@ static int encryptfs_utimens(const char *path, const struct timespec ts[2])
 	struct timeval tv[2];
 
 	//adding file path
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;
 	getFullPath(filepath, path);
 	
@@ -364,10 +376,11 @@ static int encryptfs_utimens(const char *path, const struct timespec ts[2])
 
 static int encryptfs_open(const char *path, struct fuse_file_info *fi)
 {
+	printf("in open\n");
 	int res;
 
 	//adding filepath
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;
 	getFullPath(filepath, path);	
 	res = open(filepath, fi->flags);
@@ -380,28 +393,28 @@ static int encryptfs_open(const char *path, struct fuse_file_info *fi)
 static int encryptfs_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
 {
+	printf("in read\n");
 	
 	int OPERATION;
-	//NEED TO: copy the path not overwrite, and append new path to origin
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	getFullPath(filepath, path);
 	FILE* readFile;
 	//get the data fron the filesystem
-	encryptfs_vars* readData = (encryptfs_vars *)(fuse_get_context() -> private_data);
-	char* encryptKey = readData -> keyPhrase;
+	//encryptfs_vars* readData = (encryptfs_vars *)(fuse_get_context() -> private_data);
+	//char* encryptKey = readData -> keyPhrase;
 
 	//need temp memfiles for open_memstream
-	FILE* tmpFile;
-	char* tmpStart;
-	size_t tmpSize;	
+	FILE* outFile;
+	char* outStart;
+	size_t outSize;	
 
-	//int fd;
+//	int fd;
 	int res;
 
 	//OPERATION = checkEncryption(filepath);
 	(void) fi;
 	//test for open (make sure file can open)
-/*	fd = open(path, O_RDONLY);
+	/*fd = open(path, O_RDONLY);
 	//error conditions for read
 	if (fd == -1)
 		return -errno;
@@ -411,22 +424,23 @@ static int encryptfs_read(const char *path, char *buf, size_t size, off_t offset
 		res = -errno;
 	
 
-	close(fd);*/
+	close(fd);
+	*/
 	OPERATION = (checkEncryption(filepath))? DECRYPT : PASSTHROUGH;
 	//can open file based on error conditions so open with fopen
 	readFile = fopen(filepath, "rb");
 	//open_memstream(bufferPtr, sizeOf); create IOstream with dynamically allocated buffer
-	tmpFile = open_memstream(&tmpStart, &tmpSize);
+	outFile = open_memstream(&outStart, &outSize);
 	//decrypt on new file, pipe output to tmpFile
-	do_crypt(readFile, tmpFile, OPERATION, encryptKey);
+	do_crypt(readFile, outFile, OPERATION, ENCRYPTFS_VARS->keyPhrase);
 	//need to read file in npw that decrypted
-	fseeko(tmpFile, offset, SEEK_SET);
+	fseeko(outFile, offset, SEEK_SET);
 	int csize = sizeof(char);
-	res = csize * fread(buf, csize, size, tmpfile);
+	res = csize * fread(buf, csize, size, outFile);
 	//res = pread(tmpFile, buf, size, offset);
-//possibly done with read?
+	//possibly done with read?
 
-//need fclose?
+	//need fclose?
 	//fclose(tmpFile);
 	return res;
 }
@@ -435,7 +449,7 @@ static int encryptfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	int OPERATION;
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//strcpy(filepath, PATH);
 	//strncat(filepath, path, 1024);
 	//similar to read need same temp files and variables
@@ -455,7 +469,7 @@ static int encryptfs_write(const char *path, const char *buf, size_t size,
 
 	(void) fi;
 	(void) offset;
-	/*fd = open(path, O_WRONLY);
+	/*	fd = open(path, O_WRONLY);
 	if (fd == -1)
 		return -errno;
 	
@@ -463,10 +477,10 @@ static int encryptfs_write(const char *path, const char *buf, size_t size,
 	if (res == -1)
 		res = -errno;
 	
-	close(fd);*/
-	
+	close(fd);
+	*/
 	OPERATION = (checkEncryption(filepath))? ENCRYPT : PASSTHROUGH;
-	//convert to stream	
+	//convert to memory stream
 	tmpFile = open_memstream(&tmpStart, &tmpSize);
 	fwrite(buf, size, sizeof(char), tmpFile);
 	//encrypt and read stream to the file
@@ -480,7 +494,7 @@ static int encryptfs_write(const char *path, const char *buf, size_t size,
 	//fclose(writeFile);
 	//now need to set offset: fseek on memfile to offset use SEEK_SET to offset from 
 	//beggining of file
-/*
+
 	fseek(tmpFile, offset, SEEK_SET);
 	//set result 
 	res = fwrite(buf, 1, size, tmpFile);
@@ -491,17 +505,18 @@ static int encryptfs_write(const char *path, const char *buf, size_t size,
 	fclose(tmpFile);
 	fclose(writeFile);
 	//res = pwrite(tmpFile, buf, size, offset);
-*/
+
 	return res;
+
 }
 
 static int encryptfs_statfs(const char *path, struct statvfs *stbuf)
 {
 	int res;
 	
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	strcpy(filepath, *PATH);
-	strncat(filepath, path, 1024); 
+	strncat(filepath, path, PATH_MAX); 
 	
 	res = statvfs(filepath, stbuf);
 	if (res == -1)
@@ -513,9 +528,9 @@ static int encryptfs_statfs(const char *path, struct statvfs *stbuf)
 static int encryptfs_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
 
     (void) fi;
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	strcpy(filepath, *PATH);
-	strncat(filepath, path, 1024);
+	strncat(filepath, path, PATH_MAX);
     
 	int res;
     res = creat(filepath, mode);
@@ -558,7 +573,7 @@ static int encryptfs_setxattr(const char *path, const char *name, const char *va
 //sets  the extended attribute on the fs
 
 	//adding filepath
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepah = PATH;
 	getFullPath(filepath, path);	
 	
@@ -573,7 +588,7 @@ static int encryptfs_getxattr(const char *path, const char *name, char *value,
 			size_t size)
 {
 	//adding file path
-	char filepath[1024];
+	char filepath[PATH_MAX];
 	//filepath = PATH;
 	getFullPath(filepath, path);
 	
@@ -586,7 +601,7 @@ static int encryptfs_getxattr(const char *path, const char *name, char *value,
 
 static int encryptfs_listxattr(const char *path, char *list, size_t size)
 {	
-	char filepath[1024];
+	char filepath[PATH_MAX];
 //	strcpy(filePath, PATH);
 //	strncat(filePath, path, MAX_SIZE);
 	getFullPath(filepath, path);	
@@ -600,7 +615,7 @@ static int encryptfs_listxattr(const char *path, char *list, size_t size)
 
 static int encryptfs_removexattr(const char *path, const char *name)
 {
-	char filepath[1024];
+	char filepath[PATH_MAX];
 //	strcpy(filePath, PATH);
 //	strncat(filePath, path, 1024);
 	getFullPath(filepath, path);
@@ -648,18 +663,21 @@ int main(int argc, char *argv[])
 	//args: key, target path, mount point
 	//char cwd[1024];
 //need data typ eot pass fuse_main
-	
+	/*
 	//adding code for specificatin of file system
 	printf("In main: adding path via realpath\n");
 	//PATH = getcwd(cwd,sizeof(cwd));
-	//*PATH = realpath(argv[2], NULL);
+	// *PATH = realpath(argv[2], NULL);
 	//add encryption key phrase
-	//*KEYPHRASE = argv[1];
-	encryptfs_vars private_data;
-	private_data.rootPath = realpath(argv[2], NULL);
-	private_data.keyPhrase = argv[1];
-
+	// *KEYPHRASE = argv[1];
+	*/
+	encryptfs_vars data;
+	data.rootPath = realpath(argv[2], NULL);
+	data.keyPhrase = argv[1];
+	printf("encryption key is: %s\n", data.keyPhrase);
+	printf("root path is: %s\n", data.rootPath);
+	
 	umask(0);
 	//now ready: call with args, operations, and private data
-	return fuse_main(argc-2, argv+2, &encryptfs_oper, &private_data);
+	return fuse_main(argc-2, argv+2, &encryptfs_oper, &data);
 }
